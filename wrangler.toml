@@ -1,0 +1,7 @@
+name = "newsstack-v3-proxy"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+# No bindings, no KV, no secrets. The worker holds no state: it fetches a feed
+# or reduces a page to text and answers. Edge caching is asked for per-request
+# in worker.js rather than configured here.

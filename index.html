@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>News Stack v3</title>
+<meta name="theme-color" content="#080a0f">
+<meta name="description" content="Local-first news aggregator: 70 feeds, clustered, ranked and searchable, on your phone.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<!-- Safari reads these, not the manifest, when you Add to Home Screen. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="News Stack">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+:root{color-scheme:dark;--bg:#080a0f;--panel:#10141c;--panel2:#161c26;--line:#242c39;
+--text:#e8edf5;--dim:#8c99ad;--accent:#5da8ff;--ok:#3ddc97;--warn:#ffb951;--err:#ff6b6b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+-webkit-text-size-adjust:100%}
+header{position:sticky;top:0;z-index:10;background:rgba(10,13,19,.92);
+backdrop-filter:blur(14px);border-bottom:1px solid var(--line);
+padding:calc(env(safe-area-inset-top) + 10px) 12px 10px}
+.brand{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.brand b{font-size:19px;letter-spacing:-.3px}
+.brand span{font-size:12px;color:var(--dim)}
+.controls{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
+input,select,button{background:var(--panel2);color:var(--text);border:1px solid var(--line);
+border-radius:10px;padding:10px 12px;font-size:15px;font-family:inherit;min-height:42px}
+input{flex:1 1 100%;min-width:0}
+select{flex:1 1 auto}
+button{cursor:pointer;white-space:nowrap}
+button:active{background:#212836}
+button.on{border-color:var(--accent);color:var(--accent)}
+.tabs{display:flex;gap:6px;margin-top:9px}
+.tabs button{flex:1}
+main{max-width:900px;margin:0 auto;padding:12px 12px calc(env(safe-area-inset-bottom) + 40px)}
+.bar{font-size:12.5px;color:var(--dim);padding:2px 2px 10px;display:flex;
+gap:10px;flex-wrap:wrap}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+.dot.online{background:var(--ok)}.dot.idle{background:var(--accent)}
+.dot.delayed{background:var(--warn)}.dot.throttled{background:var(--warn)}
+.dot.error,.dot.blocked{background:var(--err)}
+.dot.unknown,.dot.pending{background:var(--dim)}
+article{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+padding:13px;margin:0 0 10px}
+article h2{margin:6px 0 6px;font-size:16.5px;line-height:1.35;font-weight:650}
+article h2 a{color:var(--text);text-decoration:none}
+article h2 a:active{color:var(--accent)}
+.tag{display:inline-block;font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;
+background:var(--panel2);border:1px solid var(--line);border-radius:20px;
+padding:3px 8px;margin:0 5px 5px 0;color:var(--dim)}
+.tag.topic{cursor:pointer;color:var(--accent);border-color:#25405e}
+.tag.topic:active{background:#1b2a3d}
+.warn{color:var(--warn)}
+.tag.corr{color:var(--ok);border-color:#1f4a38}
+.tag.hot{color:var(--warn);border-color:#4a3a1c}
+.sum{color:var(--dim);font-size:14px;margin:6px 0 0}
+/* Read state dims the card instead of hiding it: the checklist has to keep
+   showing what was ticked, or ticking it looks like the story vanished. */
+article.read{opacity:.52}
+article.read h2 a{color:var(--dim)}
+.row{display:flex;align-items:flex-start;gap:10px}
+.row .body{flex:1;min-width:0}
+.tick{appearance:none;-webkit-appearance:none;flex:none;width:23px;height:23px;
+margin:3px 0 0;border:1px solid var(--line);border-radius:7px;background:var(--panel2);
+cursor:pointer;position:relative}
+.tick:checked{border-color:var(--ok)}
+.tick:checked::after{content:"";position:absolute;left:7px;top:3px;width:6px;height:11px;
+border:solid var(--ok);border-width:0 2.5px 2.5px 0;transform:rotate(42deg)}
+.save{flex:none;background:none;border:0;min-height:0;padding:2px 4px;font-size:19px;
+line-height:1;color:var(--dim);cursor:pointer}
+.save.on{color:var(--warn)}
+.acts{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.acts button{font-size:13.5px;padding:8px 11px;min-height:38px}
+.rel{margin-top:9px;border-top:1px solid var(--line);padding-top:8px}
+.rel summary{cursor:pointer;font-size:13px;color:var(--accent);list-style:none}
+.rel summary::-webkit-details-marker{display:none}
+.rel a{display:block;color:var(--dim);font-size:13.5px;text-decoration:none;
+padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;color:var(--dim);font-weight:600;font-size:12px;
+text-transform:uppercase;letter-spacing:.5px;padding:8px 6px;border-bottom:1px solid var(--line)}
+td{padding:9px 6px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:top}
+td.err{color:var(--err);font-size:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;
+margin-bottom:12px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px}
+.kpi b{display:block;font-size:21px;line-height:1.2}
+.kpi span{font-size:11.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px}
+.hide{display:none}
+@media(min-width:700px){input{flex:1 1 320px}}
+/* Added for the phone build: the setup notice when PROXY_BASE is unset, and
+   the iOS install hint. Neither exists in v3, which is served from localhost
+   and has no install step. */
+.notice{background:#1b1206;border:1px solid #4a3a1c;color:var(--warn);
+border-radius:12px;padding:12px;margin:0 0 10px;font-size:14px;line-height:1.45}
+.notice code{background:#0d0f14;border-radius:5px;padding:1px 5px;font-size:13px}
+.notice a{color:var(--accent)}
+.notice button{margin-top:8px;font-size:13px;min-height:34px;padding:6px 10px}
+</style></head><body>
+<header>
+  <div class="brand"><b>News Stack v3</b><span id="sub">loading…</span></div>
+  <div class="controls">
+    <input id="q" type="search" placeholder="Search stories, sources, topics…"
+           autocomplete="off" enterkeyhint="search">
+    <select id="cat"><option value="">All topics</option></select>
+    <select id="sort">
+      <option value="new" selected>Newest first</option>
+      <option value="old">Oldest first</option>
+      <option value="trend">Trending</option>
+      <option value="corroboration">Most corroborated</option>
+    </select>
+    <select id="win">
+      <option value="">Any time</option>
+      <option value="6">6 hours</option>
+      <option value="24" selected>24 hours</option>
+      <option value="72">3 days</option>
+      <option value="168">7 days</option>
+    </select>
+    <button id="force">Refresh now</button>
+  </div>
+  <div class="tabs">
+    <button id="tab-stories" class="on">Stories</button>
+    <button id="tab-saved">Saved</button>
+    <button id="tab-sources">Sources</button>
+  </div>
+</header>
+<main>
+  <div id="setup" class="notice hide"></div>
+  <div id="install" class="notice hide"></div>
+  <div class="bar" id="bar"></div>
+  <div class="acts" id="acts">
+    <button id="hideread">Hide read</button>
+    <button id="markpage">Mark page read</button>
+  </div>
+  <div id="stories"></div>
+  <div id="saved" class="hide"></div>
+  <div id="sources" class="hide"></div>
+</main>
+<script src="config.js"></script>
+<script src="feeds.js"></script>
+<script src="engine.js"></script>
+<script src="app.js"></script>
+</body></html>
