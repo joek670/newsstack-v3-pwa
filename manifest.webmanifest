@@ -1,7 +1,7 @@
 {
   "name": "News Stack v3",
   "short_name": "News Stack",
-  "description": "Local-first news aggregator: 70 feeds, clustered across sources, ranked by trend and corroboration, searchable offline.",
+  "description": "Local-first news aggregator: 61 feeds, clustered across sources, ranked by trend and corroboration, searchable offline.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
