@@ -16,10 +16,13 @@
 // origin", so `python dev-proxy.py` works with no configuration at all. That
 // only helps on the machine running it — a phone on cellular cannot reach your
 // laptop, which is the whole reason worker.js exists.
+//
+// Redeploy the worker with `npx wrangler deploy`; the URL below only changes if
+// the `name` in wrangler.toml does.
 window.NEWSSTACK_CONFIG = {
   PROXY_BASE: (location.hostname === "localhost" || location.hostname === "127.0.0.1")
     ? location.origin
-    : "",
+    : "https://newsstack-v3-proxy.jkileleman1.workers.dev",
 
   // v3: REFRESH_SECONDS=300. Same here, but a PWA only runs while it is on
   // screen — see README, "What a phone cannot do".

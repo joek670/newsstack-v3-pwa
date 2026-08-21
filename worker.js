@@ -247,6 +247,22 @@ function densestRegion(doc) {
  * anything whose class/id/role names furniture.
  */
 function visibleText(html) {
+  // Python's HTMLParser routes these to handle_comment / handle_decl /
+  // handle_pi / unknown_decl and they never reach handle_data. The tag pattern
+  // below only matches tags opening with a letter, so without this they survive
+  // as text: Next.js sites emit `<!-- -->` between hydrated spans and it lands
+  // mid-sentence in the body.
+  //
+  // Removed, not replaced with a space. Python contributes nothing for these, so
+  // its adjacent data runs concatenate directly — a space here turns React's
+  // `Ada<!-- -->'s` into `Ada 's`. Checked against app.py's own extract_article
+  // by tools/parity; run it before changing this.
+  html = html
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, "")
+    .replace(/<![^>]*>/g, "")
+    .replace(/<\?[\s\S]*?\?>/g, "");
+
   const parts = [];
   let skipDepth = 0;
   let skipTag = null;

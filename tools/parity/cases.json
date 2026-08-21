@@ -1,0 +1,50 @@
+[
+  {
+    "name": "react-marker-midsentence",
+    "html": "<html><body><article><p>The council voted<!-- --> to approve the plan.</p></article></body></html>"
+  },
+  {
+    "name": "react-marker-between-text-nodes",
+    "html": "<html><body><article><p><span>Hello</span>, <span>Ada</span><!-- -->'s report is out.</p></article></body></html>"
+  },
+  {
+    "name": "react-marker-joining-words",
+    "html": "<html><body><article><p>Hello<!-- -->world</p></article></body></html>"
+  },
+  {
+    "name": "doctype-and-pi",
+    "html": "<!DOCTYPE html><?xml-stylesheet type=\"text/css\"?><html><body><article><p>Body text here that is long enough to survive the readable-lines filter for sure.</p></article></body></html>"
+  },
+  {
+    "name": "conditional-comment",
+    "html": "<html><body><article><!--[if lt IE 9]><script src=\"html5shiv.js\"></script><![endif]--><p>Real paragraph content that runs on for a while so it is kept.</p></article></body></html>"
+  },
+  {
+    "name": "cdata",
+    "html": "<html><body><article><p>Before<![CDATA[ raw & stuff ]]>After the marker there is more text to keep.</p></article></body></html>"
+  },
+  {
+    "name": "comment-wrapping-content",
+    "html": "<html><body><article><p>Kept paragraph one, long enough to be readable and retained.</p><!--<p>Hidden paragraph that must never appear in output at all.</p>--><p>Kept paragraph two, also long enough to be retained here.</p></article></body></html>"
+  },
+  {
+    "name": "script-containing-comment-like",
+    "html": "<html><body><article><script>var a = \"<!-- not a comment -->\";</script><p>Visible article text that should be the only thing extracted here.</p></article></body></html>"
+  },
+  {
+    "name": "junk-attr-skip",
+    "html": "<html><body><article><div class=\"cookie-banner\">We use cookies to improve your experience on this website.</div><p>The actual article paragraph which is long enough to be kept in output.</p></article></body></html>"
+  },
+  {
+    "name": "block-boundaries",
+    "html": "<html><body><article><p>First paragraph long enough to be kept by the filter.</p><p>Second paragraph also long enough to be kept by the filter.</p></article></body></html>"
+  },
+  {
+    "name": "comment-then-block",
+    "html": "<html><body><article><!-- nav --><p>Paragraph after a comment, long enough to be kept in the output.</p></article></body></html>"
+  },
+  {
+    "name": "nested-comment-in-skip",
+    "html": "<html><body><article><style><!-- .x{color:red} --></style><p>Styled page paragraph that is long enough to be retained here.</p></article></body></html>"
+  }
+]
