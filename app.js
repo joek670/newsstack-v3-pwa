@@ -11,6 +11,18 @@
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
   m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+// Every link in a card is a string a feed chose. esc() keeps it inside the
+// attribute; it says nothing about the SCHEME, and `javascript:alert(1)` needs
+// no escaping to run when the headline is clicked. A feed is not a trusted
+// author — several of the allowed sources syndicate whatever a submitter typed
+// — so a link is rendered only if it parses as http or https, and is dropped
+// rather than guessed at otherwise.
+const href = s => {
+  try {
+    const u = new URL(String(s == null ? '' : s), location.href);
+    return (u.protocol === 'https:' || u.protocol === 'http:') ? esc(u.href) : '';
+  } catch (e) { return ''; }
+};
 let tab = 'stories', timer = null;
 
 function ago(sec){
@@ -59,10 +71,12 @@ function card(s, opts){
           ${o.savedAt ? `<span class="tag">saved ${esc(ago(s.saved_ts))}</span>` : ''}
           ${o.archived === false ? '<span class="tag warn">no longer in the archive</span>' : ''}
         </div>
-        <h2><a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title)}</a></h2>
+        <h2>${href(s.url)
+          ? `<a href="${href(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title)}</a>`
+          : esc(s.title)}</h2>
         ${s.summary ? `<p class="sum">${esc(s.summary.slice(0,320))}${s.summary.length > 320 ? '…' : ''}</p>` : ''}
         ${(s.related || []).length ? `<details class="rel"><summary>Also reported by ${s.related.length} other ${s.related.length === 1 ? 'source' : 'sources'}</summary>
-          ${s.related.map(r => `<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${esc(r.source)} — ${esc(r.title)}</a>`).join('')}
+          ${s.related.filter(r => href(r.url)).map(r => `<a href="${href(r.url)}" target="_blank" rel="noopener noreferrer">${esc(r.source)} — ${esc(r.title)}</a>`).join('')}
         </details>` : ''}
       </div>
       <button class="save ${s.saved ? 'on' : ''}" title="${s.saved ? 'Remove from Saved' : 'Save for later'}"

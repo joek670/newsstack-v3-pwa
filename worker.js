@@ -19,12 +19,29 @@
 // Configuration
 // ---------------------------------------------------------------------------
 
-// Set this to your Pages origin once you know it, e.g.
-// "https://joek670.github.io". Left as "*", anyone who finds this worker can
-// use it as a feed proxy. It still cannot be used as a general-purpose open
-// proxy — /fetch is limited to the hosts below and /article never returns raw
-// bytes — but narrowing it costs nothing.
-const ALLOWED_ORIGIN = "*";
+// The origins allowed to spend this worker's quota. GitHub Pages serves a
+// project site from https://joek670.github.io/newsstack-v3-pwa/, so the Origin
+// the browser sends is the user site with no path. localhost is here for a
+// local build pointed at the deployed worker; dev-proxy.py is the ordinary
+// local route and does not need an entry.
+//
+// An Origin header is trivially forged, so this is NOT authentication. What it
+// stops is the abuse a keyless public endpoint actually sees: another web page
+// using this worker as a free proxy, which a browser cannot do once the
+// response carries an Access-Control-Allow-Origin it does not match. A caller
+// with curl can still set the header, so the endpoint is rate-limited by
+// Cloudflare's own limits and nothing else.
+const ALLOWED_ORIGINS = [
+  "https://joek670.github.io",
+  "http://localhost:8000",
+  "http://127.0.0.1:8000",
+];
+
+/** The request's Origin if it is one we serve, otherwise null. */
+function allowedOrigin(request) {
+  const origin = request.headers.get("Origin");
+  return origin && ALLOWED_ORIGINS.includes(origin) ? origin : null;
+}
 
 // Every host in feeds.js, and nothing else. /fetch refuses anything not here.
 const FEED_HOSTS = [
@@ -70,7 +87,6 @@ const NON_HTML_PATH = /\.(?:pdf|zip|gz|tar|mp3|mp4|m4a|epub|png|jpe?g|gif)$/i;
 // ---------------------------------------------------------------------------
 function cors(extra = {}) {
   return {
-    "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Access-Control-Allow-Headers": "*",
     "Access-Control-Expose-Headers": "X-Newsstack-Upstream, X-Newsstack-Type",
@@ -228,13 +244,24 @@ function ldjsonBody(doc) {
   return "";
 }
 
+// A page may open `<article>` as often as it likes without ever closing it.
+// Each unclosed opener costs the lazy scan a walk to the end of the document,
+// so the work is (openers x length): 16k openers in 1MB measured at 1.2s, and
+// the byte cap above allows three times that. Real pages have a handful of
+// these regions, so stopping after this many loses nothing and bounds the scan.
+const MAX_REGION_CANDIDATES = 64;
+
 /** The markup most likely to hold the body. Largest match wins, not the first. */
 function densestRegion(doc) {
   for (const pattern of [ARTICLE_TAG, MAIN_TAG]) {
     pattern.lastIndex = 0;
     let best = "";
+    let seen = 0;
     let m;
-    while ((m = pattern.exec(doc)) !== null) if (m[1].length > best.length) best = m[1];
+    while (seen < MAX_REGION_CANDIDATES && (m = pattern.exec(doc)) !== null) {
+      seen++;
+      if (m[1].length > best.length) best = m[1];
+    }
     if (best && best.replace(TAGS, "").length >= CONTENT_MIN_CHARS) return best;
   }
   const b = BODY_TAG.exec(doc);
@@ -267,7 +294,18 @@ function visibleText(html) {
   let skipDepth = 0;
   let skipTag = null;
   let pos = 0;
-  const tagRe = /<(\/?)([a-zA-Z][\w:-]*)((?:"[^"]*"|'[^']*'|[^>])*?)(\/?)>/g;
+  // The attribute run must stay UNAMBIGUOUS: every alternative has to start on
+  // a character the others cannot. The earlier `[^>]` catch-all also matched a
+  // quote, so `<a """""…` with no `>` could be split between the quoted branch
+  // and the catch-all in exponentially many ways. Measured before this change:
+  // 38 quotes took 0.5s, 42 took 4s, 46 took 32s — about fifty bytes of hostile
+  // markup was enough to burn the whole CPU budget. Excluding quotes from the
+  // catch-all leaves one possible parse and makes the scan linear.
+  //
+  // The cost is a tag with an unpaired quote before its `>`: that no longer
+  // matches, and its text is treated as data. Malformed markup loses a little
+  // extraction quality; it no longer costs the worker its CPU.
+  const tagRe = /<(\/?)([a-zA-Z][\w:-]*)((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>/g;
   let m;
   while ((m = tagRe.exec(html)) !== null) {
     const text = html.slice(pos, m.index);
@@ -424,25 +462,46 @@ async function handleArticle(target) {
     200, { "Cache-Control": "public, max-age=86400" });
 }
 
+async function route(request, url, origin) {
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: cors() });
+  }
+  if (request.method !== "GET") {
+    return json({ error: "method not allowed" }, 405);
+  }
+  // /health answers anyone: it is how you check a deploy from a terminal, and
+  // it reveals nothing and fetches nothing.
+  if (url.pathname === "/health" || url.pathname === "/") {
+    return json({ ok: true, service: "newsstack-v3-proxy", feeds: FEED_HOSTS.length });
+  }
+
+  // Everything below makes an outbound request on the caller's behalf, so it
+  // is limited to the origins this worker exists to serve.
+  if (!origin) {
+    return json({ error: "origin not allowed" }, 403);
+  }
+
+  const target = url.searchParams.get("url");
+  if (!target) return json({ error: "missing url parameter" }, 400);
+
+  if (url.pathname === "/fetch") return handleFetch(target);
+  if (url.pathname === "/article") return handleArticle(target);
+  return json({ error: "not found" }, 404);
+}
+
 export default {
   async fetch(request) {
     const url = new URL(request.url);
+    const origin = allowedOrigin(request);
+    const res = await route(request, url, origin);
 
-    if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: cors() });
-    }
-    if (request.method !== "GET") {
-      return json({ error: "method not allowed" }, 405);
-    }
-    if (url.pathname === "/health" || url.pathname === "/") {
-      return json({ ok: true, service: "newsstack-v3-proxy", feeds: FEED_HOSTS.length });
-    }
-
-    const target = url.searchParams.get("url");
-    if (!target) return json({ error: "missing url parameter" }, 400);
-
-    if (url.pathname === "/fetch") return handleFetch(target);
-    if (url.pathname === "/article") return handleArticle(target);
-    return json({ error: "not found" }, 404);
+    // One place decides what Access-Control-Allow-Origin says, and it echoes
+    // only an origin already matched against the list. A response with no such
+    // header is unreadable cross-origin, which is the intended answer for a
+    // page that is not ours.
+    if (!origin) return res;
+    const headers = new Headers(res.headers);
+    headers.set("Access-Control-Allow-Origin", origin);
+    return new Response(res.body, { status: res.status, headers });
   },
 };

@@ -33,6 +33,33 @@ import urllib.request
 PORT = int(os.getenv("PORT", "8765"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
+# The hosts /fetch will talk to, read out of feeds.js so there is one list and
+# not two that drift. worker.js keeps its own copy because a Worker has no file
+# to read at request time; this one stays honest by construction.
+#
+# Without it this process is a general-purpose proxy on loopback, and loopback
+# is not a boundary: it answers every page in the developer's browser.
+FEED_HOSTS = frozenset(
+    m.lower() for m in re.findall(
+        r"https?://([A-Za-z0-9.-]+)",
+        open(os.path.join(ROOT, "feeds.js"), encoding="utf-8").read(),
+    )
+)
+
+# Only the app itself, served by this same process, may use the proxy
+# endpoints. Answering "*" let any site the developer visited read arbitrary
+# URLs through here while it was running.
+ALLOWED_ORIGINS = frozenset(
+    "%s://%s:%d" % (scheme, host, PORT)
+    for scheme in ("http",)
+    for host in ("localhost", "127.0.0.1")
+)
+
+
+def feed_host_allowed(host):
+    host = (host or "").lower()
+    return any(host == h or host.endswith("." + h) for h in FEED_HOSTS)
+
 UA = "Mozilla/5.0 (compatible; NewsStack/3.0; +https://github.com/joek670/newsstack-v3)"
 FEED_ACCEPT = ("application/rss+xml, application/atom+xml, application/xml;q=0.9, "
                "text/xml;q=0.9, */*;q=0.5")
@@ -146,11 +173,29 @@ def public_url(url):
     return True
 
 
+class GuardedRedirects(urllib.request.HTTPRedirectHandler):
+    """Re-check every hop, not just the URL the caller named.
+
+    urlopen follows redirects on its own. A host that passes public_url() can
+    answer 302 http://169.254.169.254/ and the check that was made before the
+    request has nothing to say about where the bytes actually came from.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not public_url(newurl):
+            raise urllib.error.HTTPError(newurl, 403, "redirect to non-public host",
+                                         headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_opener = urllib.request.build_opener(GuardedRedirects)
+
+
 def fetch(url, accept, max_bytes):
     req = urllib.request.Request(url, headers={
         "User-Agent": UA, "Accept": accept, "Accept-Language": "en-US,en;q=0.9",
     })
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+    with _opener.open(req, timeout=TIMEOUT) as resp:
         return resp.read(max_bytes), resp.headers.get("Content-Type", "")
 
 
@@ -239,8 +284,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=ROOT, **kw)
 
+    def _allowed_origin(self):
+        origin = self.headers.get("Origin")
+        return origin if origin in ALLOWED_ORIGINS else None
+
     def end_headers(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self._allowed_origin()
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+        self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Expose-Headers",
                          "X-Newsstack-Upstream, X-Newsstack-Type")
         super().end_headers()
@@ -261,18 +313,33 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "*")
         self.end_headers()
 
+    def _origin_ok(self):
+        """A cross-origin caller is refused outright, not merely denied the
+        CORS header: without this the response is still fetched and still
+        costs whatever the upstream costs, it is only unreadable."""
+        origin = self.headers.get("Origin")
+        return origin is None or origin in ALLOWED_ORIGINS
+
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/health":
             return self._json(200, {"ok": True, "service": "newsstack-dev-proxy"})
         if parsed.path in ("/fetch", "/article"):
+            if not self._origin_ok():
+                return self._json(403, {"error": "origin not allowed"})
             qs = urllib.parse.parse_qs(parsed.query)
             target = (qs.get("url") or [""])[0]
             if not target:
                 return self._json(400, {"error": "missing url parameter"})
             if not public_url(target):
                 return self._json(403, {"error": "host not allowed"})
+            # /fetch returns the upstream bytes verbatim, so it is held to the
+            # feed list exactly as worker.js holds it. /article is not: an
+            # aggregator entry links wherever the submitter linked, and it
+            # answers with extracted text rather than the response.
             if parsed.path == "/fetch":
+                if not feed_host_allowed(urllib.parse.urlparse(target).hostname):
+                    return self._json(403, {"error": "host not allowed"})
                 return self._fetch(target)
             return self._article(target)
         return super().do_GET()
